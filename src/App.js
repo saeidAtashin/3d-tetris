@@ -1,4 +1,4 @@
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useFrame } from "@react-three/fiber";
 import {
   OrbitControls,
   KeyboardControls,
@@ -110,19 +110,89 @@ function GridFloor() {
   );
 }
 
-// Background environment
-function GameEnvironment() {
+// Background environment with smooth star movement
+function GameEnvironment({ onRowClear }) {
+  // Add refs to control stars animation
+  const starsRef = useRef();
+  const [starsEffect, setStarsEffect] = useState(false);
+  const animationIdRef = useRef(0);
+
+  // Target position for smooth animation
+  const [targetPosition, setTargetPosition] = useState([0, 0, -50]);
+  // Current position that will be animated
+  const currentPosition = useRef([0, 0, -50]);
+
+  // Apply the effect when onRowClear changes
+  useEffect(() => {
+    if (onRowClear.count > 0) {
+      // Increment animation ID to ensure each effect is unique
+      animationIdRef.current += 1;
+
+      // Trigger the stars effect
+      setStarsEffect(true);
+
+      // Set new target position based on rows cleared
+      const intensity = onRowClear.rows * 5; // Scale based on rows cleared
+      setTargetPosition([
+        (Math.random() - 0.5) * intensity,
+        (Math.random() - 0.5) * intensity,
+        -50 + Math.random() * 10,
+      ]);
+
+      // Reset after the animation duration
+      const timer = setTimeout(() => {
+        setStarsEffect(false);
+        // Set target back to original position
+        setTargetPosition([0, 0, -50]);
+      }, 2000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [onRowClear]);
+
+  // Animation frame for smooth movement
+  useFrame(() => {
+    // Smoothly interpolate current position toward target position
+    currentPosition.current[0] +=
+      (targetPosition[0] - currentPosition.current[0]) * 0.05;
+    currentPosition.current[1] +=
+      (targetPosition[1] - currentPosition.current[1]) * 0.05;
+    currentPosition.current[2] +=
+      (targetPosition[2] - currentPosition.current[2]) * 0.05;
+
+    // If starsRef exists, update its position
+    if (starsRef.current) {
+      starsRef.current.position.x = currentPosition.current[0];
+      starsRef.current.position.y = currentPosition.current[1];
+      starsRef.current.position.z = currentPosition.current[2];
+    }
+  });
+
   return (
     <>
       <Stars
-        radius={50}
-        depth={50}
+        ref={starsRef}
+        radius={starsEffect ? 60 : 50}
+        depth={starsEffect ? 60 : 50}
         count={5000}
-        factor={4}
-        saturation={0.5}
+        factor={starsEffect ? 8 : 4}
+        saturation={starsEffect ? 1 : 0.5}
+        speed={starsEffect ? 4 : 1}
         fade
       />
       <Environment preset="night" background blur={0.2} />
+
+      {/* Add a flash effect when rows are cleared */}
+      {starsEffect && (
+        <mesh position={[0, 0, -30]}>
+          <planeGeometry args={[200, 200]} />
+          <meshBasicMaterial
+            color={onRowClear.rows > 1 ? "#ff4466" : "#4466ff"}
+            transparent
+            opacity={0.15 * onRowClear.rows}
+          />
+        </mesh>
+      )}
     </>
   );
 }
@@ -418,6 +488,9 @@ function Tetris({ onScoreUpdate }) {
     };
   }, [currentPiece, grid, clearedRows, gameOver]);
 
+  // Use an object with count to trigger effect for every row clear
+  const [rowClearEffect, setRowClearEffect] = useState({ count: 0, rows: 0 });
+
   // Check for completed rows and clear them
   const checkForCompletedRows = (grid) => {
     const completedRowIndices = [];
@@ -493,7 +566,13 @@ function Tetris({ onScoreUpdate }) {
             dispatch({ type: "SPAWN_NEW_PIECE" });
           }
         }
-      }, 150);
+
+        // Update with both count and rows to ensure trigger every time
+        setRowClearEffect((prev) => ({
+          count: prev.count + 1,
+          rows: completedRowIndices.length,
+        }));
+      }, 300);
     }, 300);
 
     return {
@@ -657,8 +736,8 @@ function Tetris({ onScoreUpdate }) {
 
   return (
     <>
-      {/* Environment */}
-      <GameEnvironment />
+      {/* Pass the effect trigger to GameEnvironment */}
+      <GameEnvironment onRowClear={rowClearEffect} />
       <GridFloor />
 
       {/* Walls */}
