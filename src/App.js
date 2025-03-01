@@ -197,6 +197,8 @@ function gameReducer(state, action) {
 function Tetris({ onScoreUpdate }) {
   const [state, dispatch] = useReducer(gameReducer, initialState);
   const { currentPiece, nextPiece, grid, score, clearedRows } = state;
+  const [gameOver, setGameOver] = useState(false);
+  const { togglePlay } = useContext(GameStateContext);
 
   // Watch for score changes and notify parent component
   useEffect(() => {
@@ -317,6 +319,8 @@ function Tetris({ onScoreUpdate }) {
 
   // Game loops
   useEffect(() => {
+    if (gameOver) return; // Don't process input if game over
+
     // Input handling loop
     const inputInterval = setInterval(() => {
       const now = Date.now();
@@ -385,45 +389,7 @@ function Tetris({ onScoreUpdate }) {
         dispatch({ type: "MOVE_PIECE", position: newPosition });
       } else {
         // Lock piece in place
-        const newGrid = [...grid];
-        currentPiece.shape.forEach((row, y) => {
-          row.forEach((cell, x) => {
-            if (cell) {
-              const gridY = currentPiece.position[1] + y;
-              const gridX = currentPiece.position[0] + x;
-              if (
-                gridY >= 0 &&
-                gridY < GRID_HEIGHT &&
-                gridX >= 0 &&
-                gridX < GRID_WIDTH
-              ) {
-                newGrid[gridY][gridX] = currentPiece.color;
-              }
-            }
-          });
-        });
-
-        // Check for completed rows before spawning new piece
-        const {
-          grid: updatedGrid,
-          rowsCleared,
-          rowIndices,
-        } = checkForCompletedRows(newGrid);
-
-        if (rowsCleared > 0) {
-          // If rows are cleared, update the grid and score
-          dispatch({
-            type: "CLEAR_ROWS",
-            grid: updatedGrid,
-            rowsCleared,
-            rowIndices,
-          });
-          onScoreUpdate(score + rowsCleared * POINTS_PER_ROW);
-        } else {
-          // If no rows are cleared, just lock the piece and spawn a new one
-          dispatch({ type: "LOCK_PIECE", grid: newGrid });
-          dispatch({ type: "SPAWN_NEW_PIECE" });
-        }
+        lockPiece();
       }
     }, 500); // Gravity every 500ms
 
@@ -431,7 +397,7 @@ function Tetris({ onScoreUpdate }) {
       clearInterval(inputInterval);
       clearInterval(gravityInterval);
     };
-  }, [currentPiece, grid, clearedRows]);
+  }, [currentPiece, grid, clearedRows, gameOver]);
 
   // Check for completed rows and clear them
   const checkForCompletedRows = (grid) => {
@@ -500,7 +466,14 @@ function Tetris({ onScoreUpdate }) {
           type: "LOCK_PIECE",
           grid: finalGrid,
         });
-        dispatch({ type: "SPAWN_NEW_PIECE" });
+
+        // Check if game is over before spawning a new piece
+        if (!gameOver) {
+          const nextPiecePosition = [4, 15, 0];
+          if (!checkCollision(nextPiecePosition, nextPiece.shape)) {
+            dispatch({ type: "SPAWN_NEW_PIECE" });
+          }
+        }
       }, 150);
     }, 300);
 
@@ -510,6 +483,79 @@ function Tetris({ onScoreUpdate }) {
       rowIndices: completedRowIndices,
     };
   };
+
+  // Check for game over condition
+  const checkGameOver = (position, shape) => {
+    // If a piece can't be placed at its starting position, the game is over
+    if (checkCollision(position, shape)) {
+      console.log("Game Over!");
+      setGameOver(true);
+      
+      // Show game over message and return to menu after a short delay
+      setTimeout(() => {
+        togglePlay(); // Return to menu
+      }, 2000);
+      
+      return true;
+    }
+    return false;
+  };
+
+  // Replace the existing lockPiece function with this updated version
+  const lockPiece = () => {
+    // Create a new grid with the current piece locked in place
+    const newGrid = [...grid];
+    currentPiece.shape.forEach((row, y) => {
+      row.forEach((cell, x) => {
+        if (cell) {
+          const gridY = y + currentPiece.position[1];
+          const gridX = x + currentPiece.position[0];
+          // Only update if within grid bounds
+          if (gridY >= 0 && gridY < GRID_HEIGHT && gridX >= 0 && gridX < GRID_WIDTH) {
+            newGrid[gridY][gridX] = currentPiece.color;
+          }
+        }
+      });
+    });
+
+    // Check for completed rows
+    const { grid: updatedGrid, rowsCleared, rowIndices } = checkForCompletedRows(newGrid);
+
+    // If rows are cleared, handle them with animations first
+    if (rowIndices.length > 0) {
+      // First dispatch to show clearing animation
+      dispatch({
+        type: "CLEAR_ROWS",
+        grid: updatedGrid,
+        rowsCleared,
+        rowIndices,
+      });
+      
+      // The rest is handled in checkForCompletedRows
+    } else {
+      // If no rows are cleared, just lock the piece
+      dispatch({
+        type: "LOCK_PIECE",
+        grid: newGrid,
+      });
+      
+      // Then check if we can spawn a new piece (or game over)
+      // Check if game over before spawning a new piece
+      const nextPiecePosition = [4, 15, 0]; // Starting position for new pieces
+      if (!checkGameOver(nextPiecePosition, nextPiece.shape)) {
+        dispatch({ type: "SPAWN_NEW_PIECE" });
+      }
+    }
+  };
+
+  // Also explicitly check for game over when a new piece spawns
+  useEffect(() => {
+    // Check game over each time a new piece appears
+    if (state.currentPiece && !gameOver) {
+      const { position, shape } = state.currentPiece;
+      checkGameOver(position, shape);
+    }
+  }, [state.currentPiece]);
 
   // Calculate wall positions and sizes
   const wallProps = {
@@ -547,6 +593,34 @@ function Tetris({ onScoreUpdate }) {
       color: "#2277dd",
     },
   };
+
+  // Game over UI overlay
+  const gameOverDisplay = gameOver && (
+    <group position={[GRID_WIDTH / 2 - 0.5, GRID_HEIGHT / 2, 1]}>
+      <mesh position={[0, 0, 0]}>
+        <boxGeometry args={[8, 4, 0.1]} />
+        <meshStandardMaterial color="#000000" opacity={0.8} transparent />
+      </mesh>
+      <Text
+        position={[0, 0.5, 0.2]}
+        color="#ff0000"
+        fontSize={1}
+        anchorX="center"
+        anchorY="middle"
+      >
+        GAME OVER
+      </Text>
+      <Text
+        position={[0, -0.5, 0.2]}
+        color="#ffffff"
+        fontSize={0.5}
+        anchorX="center"
+        anchorY="middle"
+      >
+        Final Score: {score}
+      </Text>
+    </group>
+  );
 
   return (
     <>
@@ -617,6 +691,9 @@ function Tetris({ onScoreUpdate }) {
           SCORE: {score}
         </Text>
       </group>
+      
+      {/* Game Over Display */}
+      {gameOverDisplay}
     </>
   );
 }
@@ -800,7 +877,9 @@ function App() {
               <ambientLight intensity={0.5} />
               <pointLight position={[10, 10, 10]} />
 
-              {isPlaying && <Tetris key={tetrisKey.current} onScoreUpdate={updateScore} />}
+              {isPlaying && (
+                <Tetris key={tetrisKey.current} onScoreUpdate={updateScore} />
+              )}
               <OrbitControls
                 enablePan={false}
                 minDistance={10}
