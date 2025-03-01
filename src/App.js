@@ -1,6 +1,13 @@
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, KeyboardControls } from "@react-three/drei";
-import { useState, useEffect, useReducer, useRef, createContext, useContext } from "react";
+import {
+  useState,
+  useEffect,
+  useReducer,
+  useRef,
+  createContext,
+  useContext,
+} from "react";
 
 // Create a context for the score
 const ScoreContext = createContext(0);
@@ -120,10 +127,10 @@ function gameReducer(state, action) {
 function Tetris() {
   const [state, dispatch] = useReducer(gameReducer, initialState);
   const { currentPiece, grid, score, clearedRows } = state;
-  
+
   // Make the score available through context
   const scoreContextValue = score;
-  
+
   // Use refs to store keyboard state
   const keysPressed = useRef({
     left: false,
@@ -131,7 +138,7 @@ function Tetris() {
     down: false,
     space: false,
   });
-  
+
   // Function to check collisions
   const checkCollision = (position, shape) => {
     for (let y = 0; y < shape.length; y++) {
@@ -152,70 +159,90 @@ function Tetris() {
     }
     return false;
   };
-  
+
   // Function to rotate a piece
   const rotatePiece = (shape) => {
     return shape[0].map((_, i) => shape.map((row) => row[i]).reverse());
   };
-  
+
   // Check for completed rows and clear them
   const checkForCompletedRows = (grid) => {
     const completedRowIndices = [];
-    
+
     // Find all completed rows
     for (let y = 0; y < GRID_HEIGHT; y++) {
-      if (grid[y].every(cell => cell !== 0)) {
+      if (grid[y].every((cell) => cell !== 0)) {
         completedRowIndices.push(y);
       }
     }
-    
+
     if (completedRowIndices.length === 0) {
       return { grid, rowsCleared: 0, rowIndices: [] };
     }
-    
+
     // Make a copy of the grid to work with
     const newGrid = [...grid];
-    
+
     // First mark rows for clearing animation
-    completedRowIndices.forEach(rowIndex => {
+    completedRowIndices.forEach((rowIndex) => {
       newGrid[rowIndex] = Array(GRID_WIDTH).fill("clearing");
     });
-    
+
     // Animate and then actually clear rows
     setTimeout(() => {
       // Create a new grid without the cleared rows
       let finalGrid = Array.from({ length: GRID_HEIGHT }, () =>
         Array(GRID_WIDTH).fill(0)
       );
-      
-      // Copy non-cleared rows to the new grid with gravity effect
-      let targetRow = GRID_HEIGHT - 1; // Start filling from the bottom
-      
+
+      // We need to start placing blocks at the bottom of the grid (lowest visible row)
+      // In our coordinate system, lower means smaller y-value
+      let targetRow = 0; // Start filling from the bottom (y=0)
+
       // Go through original grid from bottom to top
-      for (let y = GRID_HEIGHT - 1; y >= 0; y--) {
+      for (let y = 0; y < GRID_HEIGHT; y++) {
         // Skip rows that are being cleared
         if (!newGrid[y].includes("clearing")) {
           // Copy this row to the target position
           finalGrid[targetRow] = [...newGrid[y]];
-          targetRow--; // Move up one row for next copy
+          targetRow++; // Move to the next row up
         }
       }
-      
-      // Dispatch action to update grid and spawn new piece
-      dispatch({ 
-        type: "LOCK_PIECE", 
-        grid: finalGrid 
+
+      // For visual effect, mark rows that have moved as "falling"
+      const fallingGrid = [...newGrid];
+      for (let y = 0; y < GRID_HEIGHT; y++) {
+        if (!fallingGrid[y].includes("clearing")) {
+          // Mark this row as falling (will be rendered with a different visual effect)
+          fallingGrid[y] = fallingGrid[y].map((cell) => (cell ? "falling" : 0));
+        }
+      }
+
+      // First update to show "falling" animation
+      dispatch({
+        type: "CLEAR_ROWS",
+        grid: fallingGrid,
+        rowsCleared: 0,
+        rowIndices: [],
       });
-      dispatch({ type: "SPAWN_NEW_PIECE" });
-    }, 300); // Animation duration
-    
-    return { 
-      grid: newGrid, 
+
+      // Then after a short delay, update to final positions
+      setTimeout(() => {
+        dispatch({
+          type: "LOCK_PIECE",
+          grid: finalGrid,
+        });
+        dispatch({ type: "SPAWN_NEW_PIECE" });
+      }, 150);
+    }, 300);
+
+    return {
+      grid: newGrid,
       rowsCleared: completedRowIndices.length,
-      rowIndices: completedRowIndices
+      rowIndices: completedRowIndices,
     };
   };
-  
+
   // Handle keyboard events
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -224,36 +251,36 @@ function Tetris() {
       if (e.key === "ArrowDown") keysPressed.current.down = true;
       if (e.key === " ") keysPressed.current.space = true;
     };
-    
+
     const handleKeyUp = (e) => {
       if (e.key === "ArrowLeft") keysPressed.current.left = false;
       if (e.key === "ArrowRight") keysPressed.current.right = false;
       if (e.key === "ArrowDown") keysPressed.current.down = false;
       if (e.key === " ") keysPressed.current.space = false;
     };
-    
+
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
-    
+
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
   }, []);
-  
+
   // Game loop
   useEffect(() => {
     const gameLoop = () => {
       // Skip game updates during row clearing animation
       if (clearedRows.length > 0) return;
-      
+
       // Handle movement
       let newPosition = [...currentPiece.position];
-      
+
       if (keysPressed.current.left) newPosition[0] -= 1;
       if (keysPressed.current.right) newPosition[0] += 1;
       if (keysPressed.current.down) newPosition[1] -= 1;
-      
+
       // Check if movement is valid
       if (
         !checkCollision(newPosition, currentPiece.shape) &&
@@ -262,7 +289,7 @@ function Tetris() {
       ) {
         dispatch({ type: "MOVE_PIECE", position: newPosition });
       }
-      
+
       // Handle rotation
       if (keysPressed.current.space) {
         keysPressed.current.space = false; // Reset space to prevent continuous rotation
@@ -272,18 +299,18 @@ function Tetris() {
         }
       }
     };
-    
+
     const gravityLoop = () => {
       // Skip gravity during row clearing animation
       if (clearedRows.length > 0) return;
-      
+
       // Move piece down due to gravity
       const newPosition = [
         currentPiece.position[0],
         currentPiece.position[1] - 1,
         currentPiece.position[2],
       ];
-      
+
       if (!checkCollision(newPosition, currentPiece.shape)) {
         dispatch({ type: "MOVE_PIECE", position: newPosition });
       } else {
@@ -305,17 +332,21 @@ function Tetris() {
             }
           });
         });
-        
+
         // Check for completed rows before spawning new piece
-        const { grid: updatedGrid, rowsCleared, rowIndices } = checkForCompletedRows(newGrid);
-        
+        const {
+          grid: updatedGrid,
+          rowsCleared,
+          rowIndices,
+        } = checkForCompletedRows(newGrid);
+
         if (rowsCleared > 0) {
           // If rows are cleared, update the grid and score
-          dispatch({ 
-            type: "CLEAR_ROWS", 
-            grid: updatedGrid, 
-            rowsCleared, 
-            rowIndices 
+          dispatch({
+            type: "CLEAR_ROWS",
+            grid: updatedGrid,
+            rowsCleared,
+            rowIndices,
           });
         } else {
           // If no rows are cleared, just lock the piece and spawn a new one
@@ -324,10 +355,10 @@ function Tetris() {
         }
       }
     };
-    
+
     const gameInterval = setInterval(gameLoop, 100);
     const gravityInterval = setInterval(gravityLoop, 1000);
-    
+
     return () => {
       clearInterval(gameInterval);
       clearInterval(gravityInterval);
@@ -370,7 +401,7 @@ function Tetris() {
       color: "#888888",
     },
   };
-  
+
   return (
     <ScoreContext.Provider value={scoreContextValue}>
       <>
@@ -380,14 +411,14 @@ function Tetris() {
         <Wall {...wallProps.bottom} />
         <Wall {...wallProps.back} />
         <Wall {...wallProps.gridOutline} />
-        
+
         {/* Grid - locked pieces */}
         {grid.map((row, y) =>
           row.map((cell, x) =>
             cell ? (
-              <Block 
-                key={`${x}-${y}`} 
-                position={[x, y, 0]} 
+              <Block
+                key={`${x}-${y}`}
+                position={[x, y, 0]}
                 color={cell === "clearing" ? "#ffffff" : cell} // White flash for clearing animation
               />
             ) : null
@@ -410,7 +441,7 @@ function Tetris() {
             ) : null
           )
         )}
-        
+
         {/* Score Display */}
         <group position={[GRID_WIDTH + 2, GRID_HEIGHT - 2, 0]}>
           <pointLight position={[0, 0, 5]} intensity={0.5} />
@@ -428,7 +459,15 @@ function Tetris() {
 function ScoreDisplay() {
   const score = useContext(ScoreContext);
   return (
-    <div style={{ position: "absolute", top: 20, right: 20, color: "white", fontSize: "24px" }}>
+    <div
+      style={{
+        position: "absolute",
+        top: 20,
+        right: 20,
+        color: "white",
+        fontSize: "24px",
+      }}
+    >
       Score: {score}
     </div>
   );
