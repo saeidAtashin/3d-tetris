@@ -8,6 +8,7 @@ import { useState, useEffect, useReducer, useRef } from "react";
 const BLOCK_SIZE = 1;
 const GRID_WIDTH = 10;
 const GRID_HEIGHT = 20;
+const WALL_THICKNESS = 0.5;
 
 const shapes = [
   [[1, 1, 1, 1]], // I
@@ -42,6 +43,16 @@ function Block({ position, color }) {
     <mesh position={position}>
       <boxGeometry args={[BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE]} />
       <meshStandardMaterial color={color} />
+    </mesh>
+  );
+}
+
+// Wall component for game boundaries
+function Wall({ position, size, color }) {
+  return (
+    <mesh position={position}>
+      <boxGeometry args={size} />
+      <meshStandardMaterial color={color} transparent opacity={0.3} />
     </mesh>
   );
 }
@@ -224,8 +235,45 @@ function Tetris() {
     };
   }, [currentPiece, grid]);
   
+  // Calculate wall positions and sizes
+  const wallProps = {
+    left: {
+      position: [-WALL_THICKNESS/2 - 0.5, GRID_HEIGHT/2 - 0.5, 0],
+      size: [WALL_THICKNESS, GRID_HEIGHT, BLOCK_SIZE * 2],
+      color: "#555555"
+    },
+    right: {
+      position: [GRID_WIDTH - 0.5 + WALL_THICKNESS/2, GRID_HEIGHT/2 - 0.5, 0],
+      size: [WALL_THICKNESS, GRID_HEIGHT, BLOCK_SIZE * 2],
+      color: "#555555"
+    },
+    bottom: {
+      position: [GRID_WIDTH/2 - 0.5, -WALL_THICKNESS/2 - 0.5, 0],
+      size: [GRID_WIDTH, WALL_THICKNESS, BLOCK_SIZE * 2],
+      color: "#555555"
+    },
+    back: {
+      position: [GRID_WIDTH/2 - 0.5, GRID_HEIGHT/2 - 0.5, -WALL_THICKNESS/2 - 0.5],
+      size: [GRID_WIDTH, GRID_HEIGHT, WALL_THICKNESS],
+      color: "#333333"
+    },
+    gridOutline: {
+      position: [GRID_WIDTH/2 - 0.5, GRID_HEIGHT/2 - 0.5, 0],
+      size: [GRID_WIDTH + 0.1, GRID_HEIGHT + 0.1, 0.05],
+      color: "#888888"
+    }
+  };
+  
   return (
     <>
+      {/* Walls */}
+      <Wall {...wallProps.left} />
+      <Wall {...wallProps.right} />
+      <Wall {...wallProps.bottom} />
+      <Wall {...wallProps.back} />
+      <Wall {...wallProps.gridOutline} />
+      
+      {/* Grid - locked pieces */}
       {grid.map((row, y) =>
         row.map((cell, x) =>
           cell ? (
@@ -234,6 +282,7 @@ function Tetris() {
         )
       )}
 
+      {/* Current active piece */}
       {currentPiece.shape.map((row, y) =>
         row.map((cell, x) =>
           cell ? (
