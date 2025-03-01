@@ -94,7 +94,6 @@ function gameReducer(state, action) {
       return {
         ...state,
         grid: action.grid,
-        clearedRows: [], // Reset cleared rows
       };
     case "CLEAR_ROWS":
       return {
@@ -102,13 +101,6 @@ function gameReducer(state, action) {
         grid: action.grid,
         score: state.score + action.rowsCleared * POINTS_PER_ROW,
         clearedRows: action.rowIndices,
-        currentPiece: action.rowsCleared > 0 
-          ? state.currentPiece // Don't spawn new piece yet if rows are being cleared
-          : {
-            position: [0, 15, 0],
-            shape: shapes[Math.floor(Math.random() * shapes.length)],
-            color: `hsl(${Math.random() * 360}, 50%, 50%)`,
-          },
       };
     case "SPAWN_NEW_PIECE":
       return {
@@ -184,26 +176,36 @@ function Tetris() {
     // Make a copy of the grid to work with
     const newGrid = [...grid];
     
-    // Remove completed rows
+    // First mark rows for clearing animation
     completedRowIndices.forEach(rowIndex => {
-      // For the animation, we'll just mark the row as cleared but keep it in place
-      // Actually removing the row will happen in a subsequent step
       newGrid[rowIndex] = Array(GRID_WIDTH).fill("clearing");
     });
     
     // Animate and then actually clear rows
     setTimeout(() => {
-      // Filter out the cleared rows
-      const filteredGrid = newGrid.filter(row => !row.includes("clearing"));
-      
-      // Add new empty rows at the top
-      const emptyRows = Array.from({ length: completedRowIndices.length }, () =>
+      // Create a new grid without the cleared rows
+      let finalGrid = Array.from({ length: GRID_HEIGHT }, () =>
         Array(GRID_WIDTH).fill(0)
       );
       
-      const finalGrid = [...emptyRows, ...filteredGrid];
+      // Copy non-cleared rows to the new grid with gravity effect
+      let targetRow = GRID_HEIGHT - 1; // Start filling from the bottom
       
-      // Spawn new piece after clearing rows
+      // Go through original grid from bottom to top
+      for (let y = GRID_HEIGHT - 1; y >= 0; y--) {
+        // Skip rows that are being cleared
+        if (!newGrid[y].includes("clearing")) {
+          // Copy this row to the target position
+          finalGrid[targetRow] = [...newGrid[y]];
+          targetRow--; // Move up one row for next copy
+        }
+      }
+      
+      // Dispatch action to update grid and spawn new piece
+      dispatch({ 
+        type: "LOCK_PIECE", 
+        grid: finalGrid 
+      });
       dispatch({ type: "SPAWN_NEW_PIECE" });
     }, 300); // Animation duration
     
@@ -306,12 +308,20 @@ function Tetris() {
         
         // Check for completed rows before spawning new piece
         const { grid: updatedGrid, rowsCleared, rowIndices } = checkForCompletedRows(newGrid);
-        dispatch({ 
-          type: "CLEAR_ROWS", 
-          grid: updatedGrid, 
-          rowsCleared, 
-          rowIndices 
-        });
+        
+        if (rowsCleared > 0) {
+          // If rows are cleared, update the grid and score
+          dispatch({ 
+            type: "CLEAR_ROWS", 
+            grid: updatedGrid, 
+            rowsCleared, 
+            rowIndices 
+          });
+        } else {
+          // If no rows are cleared, just lock the piece and spawn a new one
+          dispatch({ type: "LOCK_PIECE", grid: newGrid });
+          dispatch({ type: "SPAWN_NEW_PIECE" });
+        }
       }
     };
     
