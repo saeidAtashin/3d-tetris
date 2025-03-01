@@ -5,7 +5,6 @@ import {
   Text,
   Stars,
   Environment,
-  useTexture,
 } from "@react-three/drei";
 import {
   useState,
@@ -110,7 +109,7 @@ function GridFloor() {
   );
 }
 
-// Background environment with smooth star movement
+// Background environment with smooth star movement - remove the flash effect
 function GameEnvironment({ onRowClear }) {
   // Add refs to control stars animation
   const starsRef = useRef();
@@ -154,7 +153,7 @@ function GameEnvironment({ onRowClear }) {
   useFrame(() => {
     // Smoothly interpolate current position toward target position
     currentPosition.current[0] +=
-      (targetPosition[0] - currentPosition.current[0]) * 0.05;
+      (targetPosition[0] - currentPosition.current[0]) * 1;
     currentPosition.current[1] +=
       (targetPosition[1] - currentPosition.current[1]) * 0.05;
     currentPosition.current[2] +=
@@ -182,17 +181,7 @@ function GameEnvironment({ onRowClear }) {
       />
       <Environment preset="night" background blur={0.2} />
 
-      {/* Add a flash effect when rows are cleared */}
-      {starsEffect && (
-        <mesh position={[0, 0, -30]}>
-          <planeGeometry args={[200, 200]} />
-          <meshBasicMaterial
-            color={onRowClear.rows > 1 ? "#ff4466" : "#4466ff"}
-            transparent
-            opacity={0.15 * onRowClear.rows}
-          />
-        </mesh>
-      )}
+      {/* Remove the flash effect entirely */}
     </>
   );
 }
