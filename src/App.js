@@ -75,9 +75,11 @@ const shapes = [
 function Block({ position, color }) {
   return (
     <mesh position={position}>
-      <boxGeometry args={[BLOCK_SIZE * 0.95, BLOCK_SIZE * 0.95, BLOCK_SIZE * 0.95]} />
-      <meshStandardMaterial 
-        color={color} 
+      <boxGeometry
+        args={[BLOCK_SIZE * 0.95, BLOCK_SIZE * 0.95, BLOCK_SIZE * 0.95]}
+      />
+      <meshStandardMaterial
+        color={color}
         emissive={color}
         emissiveIntensity={0.2}
       />
@@ -90,11 +92,7 @@ function Wall({ position, size, color }) {
   return (
     <mesh position={position}>
       <boxGeometry args={size} />
-      <meshStandardMaterial 
-        color={color} 
-        transparent 
-        opacity={0.3}
-      />
+      <meshStandardMaterial color={color} transparent opacity={0.3} />
     </mesh>
   );
 }
@@ -199,16 +197,16 @@ function gameReducer(state, action) {
 function Tetris() {
   const [state, dispatch] = useReducer(gameReducer, initialState);
   const { currentPiece, nextPiece, grid, score, clearedRows } = state;
-  
+
   // Make the score available through context
   const scoreContextValue = score;
-  
+
   // Initialize the game with a first piece on mount
   useEffect(() => {
     // This ensures a piece is visible immediately on game start
     dispatch({ type: "SPAWN_NEW_PIECE" });
   }, []);
-  
+
   // Use refs to store keyboard state
   const keysPressed = useRef({
     left: false,
@@ -223,7 +221,7 @@ function Tetris() {
     down: 0,
     space: 0,
   });
-  
+
   // Function to check collisions
   const checkCollision = (position, shape) => {
     for (let y = 0; y < shape.length; y++) {
@@ -245,13 +243,15 @@ function Tetris() {
     }
     return false;
   };
-  
+
   // Function to rotate a piece
   const rotatePiece = (shape) => {
-    const newShape = shape[0].map((_, i) => shape.map((row) => row[i]).reverse());
+    const newShape = shape[0].map((_, i) =>
+      shape.map((row) => row[i]).reverse()
+    );
     return newShape;
   };
-  
+
   // Keyboard handling
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -330,7 +330,7 @@ function Tetris() {
         }
         lastKeyTime.current.left = now;
       }
-      
+
       if (keysPressed.current.right && now - lastKeyTime.current.right > 100) {
         const newPosition = [
           currentPiece.position[0] + 1,
@@ -342,7 +342,7 @@ function Tetris() {
         }
         lastKeyTime.current.right = now;
       }
-      
+
       if (keysPressed.current.down && now - lastKeyTime.current.down > 50) {
         const newPosition = [
           currentPiece.position[0],
@@ -354,11 +354,11 @@ function Tetris() {
         }
         lastKeyTime.current.down = now;
       }
-      
+
       if (keysPressed.current.space && now - lastKeyTime.current.space > 200) {
         const newShape = rotatePiece(currentPiece.shape);
         const newPosition = currentPiece.position;
-        
+
         // Check if rotation would cause collision
         if (!checkCollision(newPosition, newShape)) {
           dispatch({ type: "ROTATE_PIECE", shape: newShape });
@@ -366,19 +366,19 @@ function Tetris() {
         lastKeyTime.current.space = now;
       }
     }, 16); // 60fps equivalent
-    
+
     // Gravity loop
     const gravityInterval = setInterval(() => {
       // Skip gravity during row clearing animation
       if (clearedRows.length > 0) return;
-      
+
       // Move piece down due to gravity
       const newPosition = [
         currentPiece.position[0],
         currentPiece.position[1] - 1,
         currentPiece.position[2],
       ];
-      
+
       if (!checkCollision(newPosition, currentPiece.shape)) {
         dispatch({ type: "MOVE_PIECE", position: newPosition });
       } else {
@@ -400,20 +400,20 @@ function Tetris() {
             }
           });
         });
-        
+
         // Check for completed rows before spawning new piece
         const {
           grid: updatedGrid,
           rowsCleared,
           rowIndices,
         } = checkForCompletedRows(newGrid);
-        
+
         if (rowsCleared > 0) {
           // If rows are cleared, update the grid and score
-          dispatch({ 
-            type: "CLEAR_ROWS", 
-            grid: updatedGrid, 
-            rowsCleared, 
+          dispatch({
+            type: "CLEAR_ROWS",
+            grid: updatedGrid,
+            rowsCleared,
             rowIndices,
           });
         } else {
@@ -423,7 +423,7 @@ function Tetris() {
         }
       }
     }, 500); // Gravity every 500ms
-    
+
     return () => {
       clearInterval(inputInterval);
       clearInterval(gravityInterval);
@@ -530,7 +530,11 @@ function Tetris() {
       color: "#3388ff",
     },
     back: {
-      position: [GRID_WIDTH / 2 - 0.5, GRID_HEIGHT / 2 - 0.5, -1 - WALL_THICKNESS / 2],
+      position: [
+        GRID_WIDTH / 2 - 0.5,
+        GRID_HEIGHT / 2 - 0.5,
+        -1 - WALL_THICKNESS / 2,
+      ],
       size: [GRID_WIDTH, GRID_HEIGHT, WALL_THICKNESS],
       color: "#1166cc",
     },
@@ -540,7 +544,7 @@ function Tetris() {
       color: "#2277dd",
     },
   };
-  
+
   return (
     <ScoreContext.Provider value={scoreContextValue}>
       <>
@@ -601,9 +605,9 @@ function Tetris() {
             <boxGeometry args={[6, 2, 0.3]} />
             <meshStandardMaterial color="#222222" />
           </mesh>
-          <Text 
-            position={[0, 0, 0.2]} 
-            color="#ffffff" 
+          <Text
+            position={[0, 0, 0.2]}
+            color="#ffffff"
             fontSize={0.6}
             anchorX="center"
             anchorY="middle"
@@ -631,16 +635,16 @@ function NextPiece({ piece }) {
         <boxGeometry args={[6, 6, 0.3]} />
         <meshStandardMaterial color="#222222" />
       </mesh>
-      
+
       {/* Label */}
       <group position={[0, 2, 0]}>
         <mesh>
           <boxGeometry args={[5, 1, 0.3]} />
           <meshStandardMaterial color="#333333" />
         </mesh>
-        <Text 
-          position={[0, 0, 0.2]} 
-          color="#ffffff" 
+        <Text
+          position={[0, 0, 0.2]}
+          color="#ffffff"
           fontSize={0.4}
           anchorX="center"
           anchorY="middle"
@@ -648,7 +652,7 @@ function NextPiece({ piece }) {
           NEXT PIECE
         </Text>
       </group>
-      
+
       {/* Next piece preview */}
       {piece.shape.map((row, y) =>
         row.map((cell, x) =>
@@ -768,11 +772,11 @@ function App() {
     <GameStateContext.Provider value={gameStateValue}>
       <div style={{ width: "100vw", height: "100vh" }}>
         <Canvas
-          camera={{ position: [15, 15, 15], fov: 50 }}
+          camera={{ position: [5, 20, 30], fov: 80 }}
           gl={{ alpha: false }}
         >
           <color attach="background" args={["#0a0a2c"]} />
-          
+
           <KeyboardControls
             map={[
               { name: "left", keys: ["ArrowLeft", "KeyA"] },
@@ -783,7 +787,7 @@ function App() {
           >
             <ambientLight intensity={0.5} />
             <pointLight position={[10, 10, 10]} />
-            
+
             {isPlaying && <Tetris key={tetrisKey.current} />}
             <OrbitControls
               enablePan={false}
