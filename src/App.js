@@ -1,5 +1,12 @@
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, KeyboardControls, Text } from "@react-three/drei";
+import {
+  OrbitControls,
+  KeyboardControls,
+  Text,
+  Stars,
+  Environment,
+  useTexture,
+} from "@react-three/drei";
 import {
   useState,
   useEffect,
@@ -8,15 +15,33 @@ import {
   createContext,
   useContext,
 } from "react";
+import "./App.css";
 
 // Create a context for the score
 const ScoreContext = createContext(0);
+
+// Create a context for game state
+const GameStateContext = createContext({
+  isPlaying: false,
+  togglePlay: () => {},
+});
 
 const BLOCK_SIZE = 1;
 const GRID_WIDTH = 10;
 const GRID_HEIGHT = 20;
 const WALL_THICKNESS = 0.5;
 const POINTS_PER_ROW = 100; // Points earned for each cleared row
+
+// Basic color palette for Tetris pieces
+const PIECE_COLORS = [
+  "#ff004d", // Red
+  "#00e436", // Green
+  "#29adff", // Blue
+  "#ff77a8", // Pink
+  "#ffa300", // Orange
+  "#ffec27", // Yellow
+  "#73eff7", // Cyan
+];
 
 const shapes = [
   [[1, 1, 1, 1]], // I
@@ -46,11 +71,16 @@ const shapes = [
   ], // Z
 ];
 
+// Simpler Block component
 function Block({ position, color }) {
   return (
     <mesh position={position}>
-      <boxGeometry args={[BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE]} />
-      <meshStandardMaterial color={color} />
+      <boxGeometry args={[BLOCK_SIZE * 0.95, BLOCK_SIZE * 0.95, BLOCK_SIZE * 0.95]} />
+      <meshStandardMaterial 
+        color={color} 
+        emissive={color}
+        emissiveIntensity={0.2}
+      />
     </mesh>
   );
 }
@@ -60,27 +90,61 @@ function Wall({ position, size, color }) {
   return (
     <mesh position={position}>
       <boxGeometry args={size} />
-      <meshStandardMaterial color={color} transparent opacity={0.3} />
+      <meshStandardMaterial 
+        color={color} 
+        transparent 
+        opacity={0.3}
+      />
     </mesh>
+  );
+}
+
+// Create a grid floor for better visual reference
+function GridFloor() {
+  return (
+    <mesh
+      rotation={[-Math.PI / 2, 0, 0]}
+      position={[GRID_WIDTH / 2 - 0.5, -0.5 - WALL_THICKNESS, 0]}
+    >
+      <planeGeometry args={[GRID_WIDTH + 6, GRID_WIDTH + 6]} />
+      <meshStandardMaterial color="#101020" roughness={0.7} metalness={0.3} />
+    </mesh>
+  );
+}
+
+// Background environment
+function GameEnvironment() {
+  return (
+    <>
+      <Stars
+        radius={50}
+        depth={50}
+        count={5000}
+        factor={4}
+        saturation={0.5}
+        fade
+      />
+      <Environment preset="night" background blur={0.2} />
+    </>
   );
 }
 
 // Game state reducer
 const initialState = {
   currentPiece: {
-    position: [0, 15, 0],
-    shape: shapes[0],
-    color: "red",
+    position: [4, 15, 0], // Start in the middle of the grid horizontally
+    shape: shapes[Math.floor(Math.random() * shapes.length)],
+    color: PIECE_COLORS[Math.floor(Math.random() * PIECE_COLORS.length)],
   },
   nextPiece: {
     shape: shapes[Math.floor(Math.random() * shapes.length)],
-    color: `hsl(${Math.random() * 360}, 50%, 50%)`,
+    color: PIECE_COLORS[Math.floor(Math.random() * PIECE_COLORS.length)],
   },
   grid: Array.from({ length: GRID_HEIGHT }, () =>
     Array.from({ length: GRID_WIDTH }, () => 0)
   ),
   score: 0,
-  clearedRows: [], // Track rows that are being cleared for animation
+  clearedRows: [],
 };
 
 function gameReducer(state, action) {
@@ -118,13 +182,13 @@ function gameReducer(state, action) {
         ...state,
         clearedRows: [], // Reset cleared rows after animation
         currentPiece: {
-          position: [0, 15, 0],
+          position: [4, 15, 0],
           shape: state.nextPiece.shape,
           color: state.nextPiece.color,
         },
         nextPiece: {
           shape: shapes[Math.floor(Math.random() * shapes.length)],
-          color: `hsl(${Math.random() * 360}, 50%, 50%)`,
+          color: PIECE_COLORS[Math.floor(Math.random() * PIECE_COLORS.length)],
         },
       };
     default:
@@ -135,10 +199,16 @@ function gameReducer(state, action) {
 function Tetris() {
   const [state, dispatch] = useReducer(gameReducer, initialState);
   const { currentPiece, nextPiece, grid, score, clearedRows } = state;
-
+  
   // Make the score available through context
   const scoreContextValue = score;
-
+  
+  // Initialize the game with a first piece on mount
+  useEffect(() => {
+    // This ensures a piece is visible immediately on game start
+    dispatch({ type: "SPAWN_NEW_PIECE" });
+  }, []);
+  
   // Use refs to store keyboard state
   const keysPressed = useRef({
     left: false,
@@ -147,6 +217,13 @@ function Tetris() {
     space: false,
   });
 
+  const lastKeyTime = useRef({
+    left: 0,
+    right: 0,
+    down: 0,
+    space: 0,
+  });
+  
   // Function to check collisions
   const checkCollision = (position, shape) => {
     for (let y = 0; y < shape.length; y++) {
@@ -154,6 +231,7 @@ function Tetris() {
         if (shape[y][x]) {
           const newX = position[0] + x;
           const newY = position[1] + y;
+          // Check if out of bounds or colliding with locked pieces
           if (
             newX < 0 ||
             newX >= GRID_WIDTH ||
@@ -167,11 +245,190 @@ function Tetris() {
     }
     return false;
   };
-
+  
   // Function to rotate a piece
   const rotatePiece = (shape) => {
-    return shape[0].map((_, i) => shape.map((row) => row[i]).reverse());
+    const newShape = shape[0].map((_, i) => shape.map((row) => row[i]).reverse());
+    return newShape;
   };
+  
+  // Keyboard handling
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      switch (e.key) {
+        case "ArrowLeft":
+        case "a":
+        case "A":
+          keysPressed.current.left = true;
+          break;
+        case "ArrowRight":
+        case "d":
+        case "D":
+          keysPressed.current.right = true;
+          break;
+        case "ArrowDown":
+        case "s":
+        case "S":
+          keysPressed.current.down = true;
+          break;
+        case " ":
+          keysPressed.current.space = true;
+          break;
+        default:
+          break;
+      }
+    };
+
+    const handleKeyUp = (e) => {
+      switch (e.key) {
+        case "ArrowLeft":
+        case "a":
+        case "A":
+          keysPressed.current.left = false;
+          break;
+        case "ArrowRight":
+        case "d":
+        case "D":
+          keysPressed.current.right = false;
+          break;
+        case "ArrowDown":
+        case "s":
+        case "S":
+          keysPressed.current.down = false;
+          break;
+        case " ":
+          keysPressed.current.space = false;
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, []);
+
+  // Game loops
+  useEffect(() => {
+    // Input handling loop
+    const inputInterval = setInterval(() => {
+      const now = Date.now();
+      // Handle keyboard input for movement
+      if (keysPressed.current.left && now - lastKeyTime.current.left > 100) {
+        const newPosition = [
+          currentPiece.position[0] - 1,
+          currentPiece.position[1],
+          currentPiece.position[2],
+        ];
+        if (!checkCollision(newPosition, currentPiece.shape)) {
+          dispatch({ type: "MOVE_PIECE", position: newPosition });
+        }
+        lastKeyTime.current.left = now;
+      }
+      
+      if (keysPressed.current.right && now - lastKeyTime.current.right > 100) {
+        const newPosition = [
+          currentPiece.position[0] + 1,
+          currentPiece.position[1],
+          currentPiece.position[2],
+        ];
+        if (!checkCollision(newPosition, currentPiece.shape)) {
+          dispatch({ type: "MOVE_PIECE", position: newPosition });
+        }
+        lastKeyTime.current.right = now;
+      }
+      
+      if (keysPressed.current.down && now - lastKeyTime.current.down > 50) {
+        const newPosition = [
+          currentPiece.position[0],
+          currentPiece.position[1] - 1,
+          currentPiece.position[2],
+        ];
+        if (!checkCollision(newPosition, currentPiece.shape)) {
+          dispatch({ type: "MOVE_PIECE", position: newPosition });
+        }
+        lastKeyTime.current.down = now;
+      }
+      
+      if (keysPressed.current.space && now - lastKeyTime.current.space > 200) {
+        const newShape = rotatePiece(currentPiece.shape);
+        const newPosition = currentPiece.position;
+        
+        // Check if rotation would cause collision
+        if (!checkCollision(newPosition, newShape)) {
+          dispatch({ type: "ROTATE_PIECE", shape: newShape });
+        }
+        lastKeyTime.current.space = now;
+      }
+    }, 16); // 60fps equivalent
+    
+    // Gravity loop
+    const gravityInterval = setInterval(() => {
+      // Skip gravity during row clearing animation
+      if (clearedRows.length > 0) return;
+      
+      // Move piece down due to gravity
+      const newPosition = [
+        currentPiece.position[0],
+        currentPiece.position[1] - 1,
+        currentPiece.position[2],
+      ];
+      
+      if (!checkCollision(newPosition, currentPiece.shape)) {
+        dispatch({ type: "MOVE_PIECE", position: newPosition });
+      } else {
+        // Lock piece in place
+        const newGrid = [...grid];
+        currentPiece.shape.forEach((row, y) => {
+          row.forEach((cell, x) => {
+            if (cell) {
+              const gridY = currentPiece.position[1] + y;
+              const gridX = currentPiece.position[0] + x;
+              if (
+                gridY >= 0 &&
+                gridY < GRID_HEIGHT &&
+                gridX >= 0 &&
+                gridX < GRID_WIDTH
+              ) {
+                newGrid[gridY][gridX] = currentPiece.color;
+              }
+            }
+          });
+        });
+        
+        // Check for completed rows before spawning new piece
+        const {
+          grid: updatedGrid,
+          rowsCleared,
+          rowIndices,
+        } = checkForCompletedRows(newGrid);
+        
+        if (rowsCleared > 0) {
+          // If rows are cleared, update the grid and score
+          dispatch({ 
+            type: "CLEAR_ROWS", 
+            grid: updatedGrid, 
+            rowsCleared, 
+            rowIndices,
+          });
+        } else {
+          // If no rows are cleared, just lock the piece and spawn a new one
+          dispatch({ type: "LOCK_PIECE", grid: newGrid });
+          dispatch({ type: "SPAWN_NEW_PIECE" });
+        }
+      }
+    }, 500); // Gravity every 500ms
+    
+    return () => {
+      clearInterval(inputInterval);
+      clearInterval(gravityInterval);
+    };
+  }, [currentPiece, grid, clearedRows]);
 
   // Check for completed rows and clear them
   const checkForCompletedRows = (grid) => {
@@ -251,134 +508,12 @@ function Tetris() {
     };
   };
 
-  // Handle keyboard events
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === "ArrowLeft") keysPressed.current.left = true;
-      if (e.key === "ArrowRight") keysPressed.current.right = true;
-      if (e.key === "ArrowDown") keysPressed.current.down = true;
-      if (e.key === " ") keysPressed.current.space = true;
-    };
-
-    const handleKeyUp = (e) => {
-      if (e.key === "ArrowLeft") keysPressed.current.left = false;
-      if (e.key === "ArrowRight") keysPressed.current.right = false;
-      if (e.key === "ArrowDown") keysPressed.current.down = false;
-      if (e.key === " ") keysPressed.current.space = false;
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
-    };
-  }, []);
-
-  // Game loop
-  useEffect(() => {
-    const gameLoop = () => {
-      // Skip game updates during row clearing animation
-      if (clearedRows.length > 0) return;
-
-      // Handle movement
-      let newPosition = [...currentPiece.position];
-
-      if (keysPressed.current.left) newPosition[0] -= 1;
-      if (keysPressed.current.right) newPosition[0] += 1;
-      if (keysPressed.current.down) newPosition[1] -= 1;
-
-      // Check if movement is valid
-      if (
-        !checkCollision(newPosition, currentPiece.shape) &&
-        (newPosition[0] !== currentPiece.position[0] ||
-          newPosition[1] !== currentPiece.position[1])
-      ) {
-        dispatch({ type: "MOVE_PIECE", position: newPosition });
-      }
-
-      // Handle rotation
-      if (keysPressed.current.space) {
-        keysPressed.current.space = false; // Reset space to prevent continuous rotation
-        const rotatedShape = rotatePiece(currentPiece.shape);
-        if (!checkCollision(currentPiece.position, rotatedShape)) {
-          dispatch({ type: "ROTATE_PIECE", shape: rotatedShape });
-        }
-      }
-    };
-
-    const gravityLoop = () => {
-      // Skip gravity during row clearing animation
-      if (clearedRows.length > 0) return;
-
-      // Move piece down due to gravity
-      const newPosition = [
-        currentPiece.position[0],
-        currentPiece.position[1] - 1,
-        currentPiece.position[2],
-      ];
-
-      if (!checkCollision(newPosition, currentPiece.shape)) {
-        dispatch({ type: "MOVE_PIECE", position: newPosition });
-      } else {
-        // Lock piece in place
-        const newGrid = [...grid];
-        currentPiece.shape.forEach((row, y) => {
-          row.forEach((cell, x) => {
-            if (cell) {
-              const gridY = currentPiece.position[1] + y;
-              const gridX = currentPiece.position[0] + x;
-              if (
-                gridY >= 0 &&
-                gridY < GRID_HEIGHT &&
-                gridX >= 0 &&
-                gridX < GRID_WIDTH
-              ) {
-                newGrid[gridY][gridX] = currentPiece.color;
-              }
-            }
-          });
-        });
-
-        // Check for completed rows before spawning new piece
-        const {
-          grid: updatedGrid,
-          rowsCleared,
-          rowIndices,
-        } = checkForCompletedRows(newGrid);
-
-        if (rowsCleared > 0) {
-          // If rows are cleared, update the grid and score
-          dispatch({
-            type: "CLEAR_ROWS",
-            grid: updatedGrid,
-            rowsCleared,
-            rowIndices,
-          });
-        } else {
-          // If no rows are cleared, just lock the piece and spawn a new one
-          dispatch({ type: "LOCK_PIECE", grid: newGrid });
-          dispatch({ type: "SPAWN_NEW_PIECE" });
-        }
-      }
-    };
-
-    const gameInterval = setInterval(gameLoop, 100);
-    const gravityInterval = setInterval(gravityLoop, 1000);
-
-    return () => {
-      clearInterval(gameInterval);
-      clearInterval(gravityInterval);
-    };
-  }, [currentPiece, grid, clearedRows]);
-
   // Calculate wall positions and sizes
   const wallProps = {
     left: {
       position: [-WALL_THICKNESS / 2 - 0.5, GRID_HEIGHT / 2 - 0.5, 0],
-      size: [WALL_THICKNESS, GRID_HEIGHT, BLOCK_SIZE * 2],
-      color: "#555555",
+      size: [WALL_THICKNESS, GRID_HEIGHT, BLOCK_SIZE * 4],
+      color: "#3388ff",
     },
     right: {
       position: [
@@ -386,33 +521,33 @@ function Tetris() {
         GRID_HEIGHT / 2 - 0.5,
         0,
       ],
-      size: [WALL_THICKNESS, GRID_HEIGHT, BLOCK_SIZE * 2],
-      color: "#555555",
+      size: [WALL_THICKNESS, GRID_HEIGHT, BLOCK_SIZE * 4],
+      color: "#3388ff",
     },
     bottom: {
       position: [GRID_WIDTH / 2 - 0.5, -WALL_THICKNESS / 2 - 0.5, 0],
-      size: [GRID_WIDTH, WALL_THICKNESS, BLOCK_SIZE * 2],
-      color: "#555555",
+      size: [GRID_WIDTH, WALL_THICKNESS, BLOCK_SIZE * 4],
+      color: "#3388ff",
     },
     back: {
-      position: [
-        GRID_WIDTH / 2 - 0.5,
-        GRID_HEIGHT / 2 - 0.5,
-        -WALL_THICKNESS / 2 - 0.5,
-      ],
+      position: [GRID_WIDTH / 2 - 0.5, GRID_HEIGHT / 2 - 0.5, -1 - WALL_THICKNESS / 2],
       size: [GRID_WIDTH, GRID_HEIGHT, WALL_THICKNESS],
-      color: "#333333",
+      color: "#1166cc",
     },
     gridOutline: {
       position: [GRID_WIDTH / 2 - 0.5, GRID_HEIGHT / 2 - 0.5, 0],
-      size: [GRID_WIDTH + 0.1, GRID_HEIGHT + 0.1, 0.05],
-      color: "#888888",
+      size: [GRID_WIDTH + 0.1, GRID_HEIGHT + 0.1, BLOCK_SIZE + 0.1],
+      color: "#2277dd",
     },
   };
-
+  
   return (
     <ScoreContext.Provider value={scoreContextValue}>
       <>
+        {/* Environment */}
+        <GameEnvironment />
+        <GridFloor />
+
         {/* Walls */}
         <Wall {...wallProps.left} />
         <Wall {...wallProps.right} />
@@ -460,20 +595,20 @@ function Tetris() {
         <NextPiece piece={nextPiece} />
 
         {/* Score Display in 3D */}
-        <group position={[GRID_WIDTH + 2, GRID_HEIGHT - 2, 0]}>
-          <pointLight position={[0, 0, 5]} intensity={0.5} />
+        <group position={[GRID_WIDTH + 3, GRID_HEIGHT - 2, 0]}>
+          <pointLight position={[0, 0, 5]} intensity={0.7} />
           <mesh>
-            <boxGeometry args={[5, 2, 0.2]} />
+            <boxGeometry args={[6, 2, 0.3]} />
             <meshStandardMaterial color="#222222" />
           </mesh>
           <Text 
             position={[0, 0, 0.2]} 
-            color="white" 
-            fontSize={0.5}
+            color="#ffffff" 
+            fontSize={0.6}
             anchorX="center"
             anchorY="middle"
           >
-            Score: {score}
+            SCORE: {score}
           </Text>
         </group>
       </>
@@ -484,39 +619,36 @@ function Tetris() {
 // Score display component that uses the context
 function ScoreDisplay() {
   const score = useContext(ScoreContext);
-  return (
-    <div
-      style={{
-        position: "absolute",
-        top: 20,
-        right: 20,
-        color: "white",
-        fontSize: "24px",
-      }}
-    >
-      Score: {score}
-    </div>
-  );
+  return <div className="score-display">Score: {score}</div>;
 }
 
-// Now add the NextPiece component to display the next piece
+// Next Piece component
 function NextPiece({ piece }) {
   return (
     <group position={[GRID_WIDTH + 3, GRID_HEIGHT - 8, 0]}>
       {/* Background panel */}
-      <mesh position={[0, 0, -0.1]}>
-        <boxGeometry args={[6, 6, 0.2]} />
+      <mesh position={[0, 0, -0.2]}>
+        <boxGeometry args={[6, 6, 0.3]} />
         <meshStandardMaterial color="#222222" />
       </mesh>
-
+      
       {/* Label */}
       <group position={[0, 2, 0]}>
         <mesh>
-          <boxGeometry args={[5, 1, 0.2]} />
+          <boxGeometry args={[5, 1, 0.3]} />
           <meshStandardMaterial color="#333333" />
         </mesh>
+        <Text 
+          position={[0, 0, 0.2]} 
+          color="#ffffff" 
+          fontSize={0.4}
+          anchorX="center"
+          anchorY="middle"
+        >
+          NEXT PIECE
+        </Text>
       </group>
-
+      
       {/* Next piece preview */}
       {piece.shape.map((row, y) =>
         row.map((cell, x) =>
@@ -537,29 +669,145 @@ function NextPiece({ piece }) {
   );
 }
 
-function App() {
-  return (
-    <div style={{ width: "100vw", height: "100vh" }}>
-      <Canvas camera={{ position: [15, 15, 15], fov: 50 }}>
-        <KeyboardControls
-          map={[
-            { name: "left", keys: ["ArrowLeft", "KeyA"] },
-            { name: "right", keys: ["ArrowRight", "KeyD"] },
-            { name: "down", keys: ["ArrowDown", "KeyS"] },
-            { name: "space", keys: ["Space"] },
-          ]}
-        >
-          <ambientLight intensity={0.5} />
-          <pointLight position={[10, 10, 10]} />
-          <Tetris />
-          <OrbitControls />
-        </KeyboardControls>
-      </Canvas>
-      <div style={{ position: "absolute", top: 20, left: 20, color: "white" }}>
-        Use arrow keys to move | Space to rotate
-      </div>
-      <ScoreDisplay />
+// Menu component (keep this as is)
+function GameMenu() {
+  const { isPlaying, togglePlay } = useContext(GameStateContext);
+  const [menuSection, setMenuSection] = useState("main");
+
+  if (isPlaying) return null;
+
+  const renderMainMenu = () => (
+    <div className="menu-container">
+      <h1>3D TETRIS</h1>
+      <button onClick={togglePlay}>Start Game</button>
+      <button onClick={() => setMenuSection("guide")}>How to Play</button>
+      <button onClick={() => setMenuSection("details")}>Game Details</button>
     </div>
+  );
+
+  const renderGuide = () => (
+    <div className="menu-container guide">
+      <h2>How to Play</h2>
+      <div className="guide-content">
+        <p>Controls:</p>
+        <ul>
+          <li>
+            <strong>Left/Right Arrow Keys:</strong> Move piece horizontally
+          </li>
+          <li>
+            <strong>Down Arrow Key:</strong> Move piece down faster
+          </li>
+          <li>
+            <strong>Space Bar:</strong> Rotate piece
+          </li>
+        </ul>
+        <p>Objective:</p>
+        <p>
+          Fill entire rows with blocks to clear them and earn points. The game
+          ends when pieces reach the top of the grid.
+        </p>
+      </div>
+      <button onClick={() => setMenuSection("main")}>Back to Menu</button>
+    </div>
+  );
+
+  const renderDetails = () => (
+    <div className="menu-container details">
+      <h2>Game Details</h2>
+      <div className="details-content">
+        <p>Game Features:</p>
+        <ul>
+          <li>3D rendered Tetris game</li>
+          <li>Classic Tetris mechanics with modern visuals</li>
+          <li>Row clearing animations</li>
+          <li>Next piece preview</li>
+          <li>Score tracking</li>
+        </ul>
+        <p>Scoring:</p>
+        <p>
+          Each cleared row is worth 100 points. Clear multiple rows at once for
+          more points!
+        </p>
+      </div>
+      <button onClick={() => setMenuSection("main")}>Back to Menu</button>
+    </div>
+  );
+
+  return (
+    <div className="menu-overlay">
+      {menuSection === "main" && renderMainMenu()}
+      {menuSection === "guide" && renderGuide()}
+      {menuSection === "details" && renderDetails()}
+    </div>
+  );
+}
+
+// App component (keep the menu functionality)
+function App() {
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const togglePlay = () => {
+    setIsPlaying(!isPlaying);
+  };
+
+  const gameStateValue = {
+    isPlaying,
+    togglePlay,
+  };
+
+  // Force re-mount the Tetris component when toggling play state
+  const tetrisKey = useRef(0);
+
+  useEffect(() => {
+    if (isPlaying) {
+      tetrisKey.current += 1;
+    }
+  }, [isPlaying]);
+
+  return (
+    <GameStateContext.Provider value={gameStateValue}>
+      <div style={{ width: "100vw", height: "100vh" }}>
+        <Canvas
+          camera={{ position: [15, 15, 15], fov: 50 }}
+          gl={{ alpha: false }}
+        >
+          <color attach="background" args={["#0a0a2c"]} />
+          
+          <KeyboardControls
+            map={[
+              { name: "left", keys: ["ArrowLeft", "KeyA"] },
+              { name: "right", keys: ["ArrowRight", "KeyD"] },
+              { name: "down", keys: ["ArrowDown", "KeyS"] },
+              { name: "space", keys: ["Space"] },
+            ]}
+          >
+            <ambientLight intensity={0.5} />
+            <pointLight position={[10, 10, 10]} />
+            
+            {isPlaying && <Tetris key={tetrisKey.current} />}
+            <OrbitControls
+              enablePan={false}
+              minDistance={10}
+              maxDistance={35}
+            />
+          </KeyboardControls>
+        </Canvas>
+
+        {isPlaying && (
+          <div className="game-ui">
+            <div className="controls-hint">
+              Use arrow keys to move | Space to rotate
+            </div>
+            <button className="menu-button" onClick={togglePlay}>
+              Menu
+            </button>
+            <ScoreDisplay />
+          </div>
+        )}
+
+        <GameMenu />
+      </div>
+    </GameStateContext.Provider>
   );
 }
 
