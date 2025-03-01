@@ -1,5 +1,5 @@
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, KeyboardControls } from "@react-three/drei";
+import { OrbitControls, KeyboardControls, Text } from "@react-three/drei";
 import {
   useState,
   useEffect,
@@ -72,6 +72,10 @@ const initialState = {
     shape: shapes[0],
     color: "red",
   },
+  nextPiece: {
+    shape: shapes[Math.floor(Math.random() * shapes.length)],
+    color: `hsl(${Math.random() * 360}, 50%, 50%)`,
+  },
   grid: Array.from({ length: GRID_HEIGHT }, () =>
     Array.from({ length: GRID_WIDTH }, () => 0)
   ),
@@ -115,6 +119,10 @@ function gameReducer(state, action) {
         clearedRows: [], // Reset cleared rows after animation
         currentPiece: {
           position: [0, 15, 0],
+          shape: state.nextPiece.shape,
+          color: state.nextPiece.color,
+        },
+        nextPiece: {
           shape: shapes[Math.floor(Math.random() * shapes.length)],
           color: `hsl(${Math.random() * 360}, 50%, 50%)`,
         },
@@ -126,7 +134,7 @@ function gameReducer(state, action) {
 
 function Tetris() {
   const [state, dispatch] = useReducer(gameReducer, initialState);
-  const { currentPiece, grid, score, clearedRows } = state;
+  const { currentPiece, nextPiece, grid, score, clearedRows } = state;
 
   // Make the score available through context
   const scoreContextValue = score;
@@ -419,7 +427,13 @@ function Tetris() {
               <Block
                 key={`${x}-${y}`}
                 position={[x, y, 0]}
-                color={cell === "clearing" ? "#ffffff" : cell} // White flash for clearing animation
+                color={
+                  cell === "clearing"
+                    ? "#ffffff"
+                    : cell === "falling"
+                    ? "#aaaaaa"
+                    : cell
+                }
               />
             ) : null
           )
@@ -442,13 +456,25 @@ function Tetris() {
           )
         )}
 
-        {/* Score Display */}
+        {/* Next Piece Display */}
+        <NextPiece piece={nextPiece} />
+
+        {/* Score Display in 3D */}
         <group position={[GRID_WIDTH + 2, GRID_HEIGHT - 2, 0]}>
           <pointLight position={[0, 0, 5]} intensity={0.5} />
           <mesh>
             <boxGeometry args={[5, 2, 0.2]} />
             <meshStandardMaterial color="#222222" />
           </mesh>
+          <Text 
+            position={[0, 0, 0.2]} 
+            color="white" 
+            fontSize={0.5}
+            anchorX="center"
+            anchorY="middle"
+          >
+            Score: {score}
+          </Text>
         </group>
       </>
     </ScoreContext.Provider>
@@ -470,6 +496,44 @@ function ScoreDisplay() {
     >
       Score: {score}
     </div>
+  );
+}
+
+// Now add the NextPiece component to display the next piece
+function NextPiece({ piece }) {
+  return (
+    <group position={[GRID_WIDTH + 3, GRID_HEIGHT - 8, 0]}>
+      {/* Background panel */}
+      <mesh position={[0, 0, -0.1]}>
+        <boxGeometry args={[6, 6, 0.2]} />
+        <meshStandardMaterial color="#222222" />
+      </mesh>
+
+      {/* Label */}
+      <group position={[0, 2, 0]}>
+        <mesh>
+          <boxGeometry args={[5, 1, 0.2]} />
+          <meshStandardMaterial color="#333333" />
+        </mesh>
+      </group>
+
+      {/* Next piece preview */}
+      {piece.shape.map((row, y) =>
+        row.map((cell, x) =>
+          cell ? (
+            <Block
+              key={`next-${x}-${y}`}
+              position={[
+                x - piece.shape[0].length / 2 + 0.5,
+                y - piece.shape.length / 2 + 0.5,
+                0,
+              ]}
+              color={piece.color}
+            />
+          ) : null
+        )
+      )}
+    </group>
   );
 }
 
