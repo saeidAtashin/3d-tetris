@@ -195,7 +195,26 @@ function gameReducer(state, action) {
 }
 
 function Tetris({ onScoreUpdate }) {
-  const [state, dispatch] = useReducer(gameReducer, initialState);
+  // Create a clean initialState function to ensure fresh state each time
+  const getInitialState = () => ({
+    currentPiece: {
+      position: [4, 15, 0],
+      shape: shapes[Math.floor(Math.random() * shapes.length)],
+      color: PIECE_COLORS[Math.floor(Math.random() * PIECE_COLORS.length)],
+    },
+    nextPiece: {
+      shape: shapes[Math.floor(Math.random() * shapes.length)],
+      color: PIECE_COLORS[Math.floor(Math.random() * PIECE_COLORS.length)],
+    },
+    grid: Array.from({ length: GRID_HEIGHT }, () =>
+      Array.from({ length: GRID_WIDTH }, () => 0)
+    ),
+    score: 0,
+    clearedRows: [],
+  });
+
+  // Use the function to get a fresh initial state
+  const [state, dispatch] = useReducer(gameReducer, getInitialState());
   const { currentPiece, nextPiece, grid, score, clearedRows } = state;
   const [gameOver, setGameOver] = useState(false);
   const { togglePlay } = useContext(GameStateContext);
@@ -490,12 +509,12 @@ function Tetris({ onScoreUpdate }) {
     if (checkCollision(position, shape)) {
       console.log("Game Over!");
       setGameOver(true);
-      
+
       // Show game over message and return to menu after a short delay
       setTimeout(() => {
         togglePlay(); // Return to menu
       }, 2000);
-      
+
       return true;
     }
     return false;
@@ -511,7 +530,12 @@ function Tetris({ onScoreUpdate }) {
           const gridY = y + currentPiece.position[1];
           const gridX = x + currentPiece.position[0];
           // Only update if within grid bounds
-          if (gridY >= 0 && gridY < GRID_HEIGHT && gridX >= 0 && gridX < GRID_WIDTH) {
+          if (
+            gridY >= 0 &&
+            gridY < GRID_HEIGHT &&
+            gridX >= 0 &&
+            gridX < GRID_WIDTH
+          ) {
             newGrid[gridY][gridX] = currentPiece.color;
           }
         }
@@ -519,7 +543,11 @@ function Tetris({ onScoreUpdate }) {
     });
 
     // Check for completed rows
-    const { grid: updatedGrid, rowsCleared, rowIndices } = checkForCompletedRows(newGrid);
+    const {
+      grid: updatedGrid,
+      rowsCleared,
+      rowIndices,
+    } = checkForCompletedRows(newGrid);
 
     // If rows are cleared, handle them with animations first
     if (rowIndices.length > 0) {
@@ -530,7 +558,7 @@ function Tetris({ onScoreUpdate }) {
         rowsCleared,
         rowIndices,
       });
-      
+
       // The rest is handled in checkForCompletedRows
     } else {
       // If no rows are cleared, just lock the piece
@@ -538,7 +566,7 @@ function Tetris({ onScoreUpdate }) {
         type: "LOCK_PIECE",
         grid: newGrid,
       });
-      
+
       // Then check if we can spawn a new piece (or game over)
       // Check if game over before spawning a new piece
       const nextPiecePosition = [4, 15, 0]; // Starting position for new pieces
@@ -622,6 +650,11 @@ function Tetris({ onScoreUpdate }) {
     </group>
   );
 
+  // Add logging for debugging
+  useEffect(() => {
+    console.log("Tetris component mounted/reset");
+  }, []);
+
   return (
     <>
       {/* Environment */}
@@ -691,7 +724,7 @@ function Tetris({ onScoreUpdate }) {
           SCORE: {score}
         </Text>
       </group>
-      
+
       {/* Game Over Display */}
       {gameOverDisplay}
     </>
@@ -827,13 +860,19 @@ function GameMenu() {
 // App component (keep the menu functionality)
 function App() {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [score, setScore] = useState(0); // Add score state at the App level
+  const [score, setScore] = useState(0);
+  // Add a gameReset state to force Tetris component to fully reset
+  const [gameReset, setGameReset] = useState(0);
 
   const togglePlay = () => {
-    setIsPlaying(!isPlaying);
-    // Reset score when starting a new game
-    if (!isPlaying) {
+    if (isPlaying) {
+      // Going back to menu
+      setIsPlaying(false);
+    } else {
+      // Starting new game - reset everything
       setScore(0);
+      setGameReset((prev) => prev + 1); // Increment to force complete reset
+      setIsPlaying(true);
     }
   };
 
@@ -847,21 +886,14 @@ function App() {
     setScore(newScore);
   };
 
-  // Force re-mount the Tetris component when toggling play state
-  const tetrisKey = useRef(0);
-
-  useEffect(() => {
-    if (isPlaying) {
-      tetrisKey.current += 1;
-    }
-  }, [isPlaying]);
+  // No need for separate tetrisKey as gameReset serves the same purpose
 
   return (
     <GameStateContext.Provider value={gameStateValue}>
       <ScoreContext.Provider value={score}>
         <div style={{ width: "100vw", height: "100vh" }}>
           <Canvas
-            camera={{ position: [5, 20, 30], fov: 80 }}
+            camera={{ position: [5, 20, 50], fov: 80 }}
             gl={{ alpha: false }}
           >
             <color attach="background" args={["#0a0a2c"]} />
@@ -878,7 +910,7 @@ function App() {
               <pointLight position={[10, 10, 10]} />
 
               {isPlaying && (
-                <Tetris key={tetrisKey.current} onScoreUpdate={updateScore} />
+                <Tetris key={gameReset} onScoreUpdate={updateScore} />
               )}
               <OrbitControls
                 enablePan={false}
