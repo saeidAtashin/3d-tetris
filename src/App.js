@@ -194,12 +194,14 @@ function gameReducer(state, action) {
   }
 }
 
-function Tetris() {
+function Tetris({ onScoreUpdate }) {
   const [state, dispatch] = useReducer(gameReducer, initialState);
   const { currentPiece, nextPiece, grid, score, clearedRows } = state;
 
-  // Make the score available through context
-  const scoreContextValue = score;
+  // Watch for score changes and notify parent component
+  useEffect(() => {
+    onScoreUpdate(score);
+  }, [score, onScoreUpdate]);
 
   // Initialize the game with a first piece on mount
   useEffect(() => {
@@ -416,6 +418,7 @@ function Tetris() {
             rowsCleared,
             rowIndices,
           });
+          onScoreUpdate(score + rowsCleared * POINTS_PER_ROW);
         } else {
           // If no rows are cleared, just lock the piece and spawn a new one
           dispatch({ type: "LOCK_PIECE", grid: newGrid });
@@ -546,77 +549,75 @@ function Tetris() {
   };
 
   return (
-    <ScoreContext.Provider value={scoreContextValue}>
-      <>
-        {/* Environment */}
-        <GameEnvironment />
-        <GridFloor />
+    <>
+      {/* Environment */}
+      <GameEnvironment />
+      <GridFloor />
 
-        {/* Walls */}
-        <Wall {...wallProps.left} />
-        <Wall {...wallProps.right} />
-        <Wall {...wallProps.bottom} />
-        <Wall {...wallProps.back} />
-        <Wall {...wallProps.gridOutline} />
+      {/* Walls */}
+      <Wall {...wallProps.left} />
+      <Wall {...wallProps.right} />
+      <Wall {...wallProps.bottom} />
+      <Wall {...wallProps.back} />
+      <Wall {...wallProps.gridOutline} />
 
-        {/* Grid - locked pieces */}
-        {grid.map((row, y) =>
-          row.map((cell, x) =>
-            cell ? (
-              <Block
-                key={`${x}-${y}`}
-                position={[x, y, 0]}
-                color={
-                  cell === "clearing"
-                    ? "#ffffff"
-                    : cell === "falling"
-                    ? "#aaaaaa"
-                    : cell
-                }
-              />
-            ) : null
-          )
-        )}
+      {/* Grid - locked pieces */}
+      {grid.map((row, y) =>
+        row.map((cell, x) =>
+          cell ? (
+            <Block
+              key={`${x}-${y}`}
+              position={[x, y, 0]}
+              color={
+                cell === "clearing"
+                  ? "#ffffff"
+                  : cell === "falling"
+                  ? "#aaaaaa"
+                  : cell
+              }
+            />
+          ) : null
+        )
+      )}
 
-        {/* Current active piece */}
-        {currentPiece.shape.map((row, y) =>
-          row.map((cell, x) =>
-            cell ? (
-              <Block
-                key={`c-${x}-${y}`}
-                position={[
-                  x + currentPiece.position[0],
-                  y + currentPiece.position[1],
-                  0,
-                ]}
-                color={currentPiece.color}
-              />
-            ) : null
-          )
-        )}
+      {/* Current active piece */}
+      {currentPiece.shape.map((row, y) =>
+        row.map((cell, x) =>
+          cell ? (
+            <Block
+              key={`c-${x}-${y}`}
+              position={[
+                x + currentPiece.position[0],
+                y + currentPiece.position[1],
+                0,
+              ]}
+              color={currentPiece.color}
+            />
+          ) : null
+        )
+      )}
 
-        {/* Next Piece Display */}
-        <NextPiece piece={nextPiece} />
+      {/* Next Piece Display */}
+      <NextPiece piece={nextPiece} />
 
-        {/* Score Display in 3D */}
-        <group position={[GRID_WIDTH + 3, GRID_HEIGHT - 2, 0]}>
-          <pointLight position={[0, 0, 5]} intensity={0.7} />
-          <mesh>
-            <boxGeometry args={[6, 2, 0.3]} />
-            <meshStandardMaterial color="#222222" />
-          </mesh>
-          <Text
-            position={[0, 0, 0.2]}
-            color="#ffffff"
-            fontSize={0.6}
-            anchorX="center"
-            anchorY="middle"
-          >
-            SCORE: {score}
-          </Text>
-        </group>
-      </>
-    </ScoreContext.Provider>
+      {/* Score Display in 3D */}
+      <group position={[GRID_WIDTH + 3, GRID_HEIGHT - 2, 0]}>
+        <pointLight position={[0, 0, 5]} intensity={0.7} />
+        <mesh>
+          <boxGeometry args={[6, 2, 0.3]} />
+          <meshStandardMaterial color="#222222" />
+        </mesh>
+        <Text
+          position={[0, 0, 0.2]}
+          color="#ffffff"
+          fontSize={0.6}
+          anchorX="center"
+          anchorY="middle"
+        >
+          SCORE: {score}
+        </Text>
+      </group>
+    </>
   );
 }
 
@@ -749,14 +750,24 @@ function GameMenu() {
 // App component (keep the menu functionality)
 function App() {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [score, setScore] = useState(0); // Add score state at the App level
 
   const togglePlay = () => {
     setIsPlaying(!isPlaying);
+    // Reset score when starting a new game
+    if (!isPlaying) {
+      setScore(0);
+    }
   };
 
   const gameStateValue = {
     isPlaying,
     togglePlay,
+  };
+
+  // Function to update score from Tetris component
+  const updateScore = (newScore) => {
+    setScore(newScore);
   };
 
   // Force re-mount the Tetris component when toggling play state
@@ -770,47 +781,49 @@ function App() {
 
   return (
     <GameStateContext.Provider value={gameStateValue}>
-      <div style={{ width: "100vw", height: "100vh" }}>
-        <Canvas
-          camera={{ position: [5, 20, 30], fov: 80 }}
-          gl={{ alpha: false }}
-        >
-          <color attach="background" args={["#0a0a2c"]} />
-
-          <KeyboardControls
-            map={[
-              { name: "left", keys: ["ArrowLeft", "KeyA"] },
-              { name: "right", keys: ["ArrowRight", "KeyD"] },
-              { name: "down", keys: ["ArrowDown", "KeyS"] },
-              { name: "space", keys: ["Space"] },
-            ]}
+      <ScoreContext.Provider value={score}>
+        <div style={{ width: "100vw", height: "100vh" }}>
+          <Canvas
+            camera={{ position: [5, 20, 30], fov: 80 }}
+            gl={{ alpha: false }}
           >
-            <ambientLight intensity={0.5} />
-            <pointLight position={[10, 10, 10]} />
+            <color attach="background" args={["#0a0a2c"]} />
 
-            {isPlaying && <Tetris key={tetrisKey.current} />}
-            <OrbitControls
-              enablePan={false}
-              minDistance={10}
-              maxDistance={35}
-            />
-          </KeyboardControls>
-        </Canvas>
+            <KeyboardControls
+              map={[
+                { name: "left", keys: ["ArrowLeft", "KeyA"] },
+                { name: "right", keys: ["ArrowRight", "KeyD"] },
+                { name: "down", keys: ["ArrowDown", "KeyS"] },
+                { name: "space", keys: ["Space"] },
+              ]}
+            >
+              <ambientLight intensity={0.5} />
+              <pointLight position={[10, 10, 10]} />
 
-        {isPlaying && (
-          <div className="game-ui">
-            <div className="controls-hint">
-              Use arrow keys to move | Space to rotate
+              {isPlaying && <Tetris key={tetrisKey.current} onScoreUpdate={updateScore} />}
+              <OrbitControls
+                enablePan={false}
+                minDistance={10}
+                maxDistance={35}
+              />
+            </KeyboardControls>
+          </Canvas>
+
+          {isPlaying && (
+            <div className="game-ui">
+              <div className="controls-hint">
+                Use arrow keys to move | Space to rotate
+              </div>
+              <button className="menu-button" onClick={togglePlay}>
+                Menu
+              </button>
+              <ScoreDisplay />
             </div>
-            <button className="menu-button" onClick={togglePlay}>
-              Menu
-            </button>
-            <ScoreDisplay />
-          </div>
-        )}
+          )}
 
-        <GameMenu />
-      </div>
+          <GameMenu />
+        </div>
+      </ScoreContext.Provider>
     </GameStateContext.Provider>
   );
 }
